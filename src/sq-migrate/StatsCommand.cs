@@ -69,7 +69,7 @@ namespace sq_migrate
 
             AnsiConsole.Markup($"Found [green]{numberOfQueries}[/] saved queries");
 
-            var writer = new StreamWriter(settings.FileOutput ?? "stats.csv", Encoding.UTF8, new FileStreamOptions() {Mode = FileMode.OpenOrCreate, Access = FileAccess.ReadWrite});
+            var writer = new StreamWriter(settings.FileOutput ?? "stats.csv", Encoding.UTF8, new FileStreamOptions() {Mode = FileMode.OpenOrCreate | FileMode.Truncate, Access = FileAccess.ReadWrite});
             writer.WriteLine($"LoadedQueryName;LastExecuted;RunCounter;FailCounter;NumberOfPerPart;NumberOfChangeValueOrder;NumberOfDeleteValue;NumberOfDeleteVariable;NumberOfSortTime;NumberOfSplitTime;NumberOfSum;NumberOfChangeDecimals;NumberOfChangeText;NumberOfPivotTimeToHeading;NumberOfChangeCodeTextPresentation");
             var statsResults = await AnsiConsole
                 .Progress()
@@ -90,6 +90,8 @@ namespace sq_migrate
 
                     return (successes, failures);
                 });
+
+            writer.Close();
 
             return 0;
         }

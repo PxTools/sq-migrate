@@ -31,6 +31,7 @@ namespace sq_migrate
                 SavedQuery? sq = JsonHelper.Deserialize<SavedQuery>(query) as SavedQuery;
                 if (sq != null)
                 {
+                    sq.LoadedQueryName = Path.GetFileNameWithoutExtension(queryPath);
                     yield return sq;
                 }
                 else
