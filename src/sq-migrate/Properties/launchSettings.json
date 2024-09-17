@@ -2,7 +2,7 @@
   "profiles": {
     "sq-migrate": {
       "commandName": "Project",
-      "commandLineArgs": "stats -t file"
+      "commandLineArgs": "stats -t database"
     }
   }
 }

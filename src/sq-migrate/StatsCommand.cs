@@ -105,11 +105,11 @@ namespace sq_migrate
 
                 if (settings.DatabaseType == DatabaseTypes.MSSQL)
                 {
-                    return  new StatsMSSqlDatabaseBackend(connectionString, settings.DatabaseSchemaOwner ?? "dbo");
+                    return new StatsDatabaseBackend(connectionString, settings.DatabaseSchemaOwner ?? "dbo", new MSSqlDbProvider());
                 }
                 else
                 {
-                    //TODO : Implement Oracle database types
+                    return new StatsDatabaseBackend(connectionString, settings.DatabaseSchemaOwner ?? "dbo", new OracleDbProvider());
                 }
             }
             

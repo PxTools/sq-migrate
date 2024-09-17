@@ -9,17 +9,18 @@ using System.Threading.Tasks;
 
 namespace sq_migrate
 {
-    public class StatsMSSqlDatabaseBackend(string connectionsString, string owner) : IStatsBackend
+    public class StatsDatabaseBackend(string connectionsString, string owner, IDbProvider provider) : IStatsBackend
     {
         private readonly string _connectionString = connectionsString;
         private readonly string _owner = owner;
+        private readonly IDbProvider _dbProvider = provider;
 
         public async IAsyncEnumerable<SavedQuery> GetQueries()
         {
-            using (var conn = new SqlConnection(_connectionString))
+            using (var conn = _dbProvider.CreateConnection(_connectionString))
             {
                 conn.Open();
-                var cmd = new Microsoft.Data.SqlClient.SqlCommand($"select QueryText, QueryId, Runs, Fails, UsedDate from [{_owner}].SavedQueryMeta", conn);
+                var cmd = _dbProvider.CreateCommand($"select QueryText, QueryId, Runs, Fails, UsedDate from [{_owner}].SavedQueryMeta", conn);
 
                 using (var reader = cmd.ExecuteReader())
                 {
@@ -51,18 +52,17 @@ namespace sq_migrate
                         }
                     }
                 }
-
             }
         }
 
         public int NumberOfQueries()
         {
-            using (var conn = new SqlConnection(_connectionString))
+            using (var conn = _dbProvider.CreateConnection(_connectionString))
             {
                 
                 conn.Open();
 
-                var cmd = new SqlCommand($"SELECT COUNT(*) FROM [{_owner}].SavedQueryMeta", conn);
+                var cmd = _dbProvider.CreateCommand($"SELECT COUNT(*) FROM [{_owner}].SavedQueryMeta", conn);
 
                 int numberOfQueries = (int)cmd.ExecuteScalar();
 
