@@ -6,7 +6,7 @@
     <RootNamespace>sq_migrate</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PublishAot>true</PublishAot>
+    <PublishAot>False</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
