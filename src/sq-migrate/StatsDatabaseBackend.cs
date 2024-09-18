@@ -20,7 +20,7 @@ namespace sq_migrate
             using (var conn = _dbProvider.CreateConnection(_connectionString))
             {
                 conn.Open();
-                var cmd = _dbProvider.CreateCommand($"select QueryText, QueryId, Runs, Fails, UsedDate from [{_owner}].SavedQueryMeta", conn);
+                var cmd = _dbProvider.CreateCommand($"select QueryText, QueryId, Runs, Fails, UsedDate from {_owner}.SavedQueryMeta", conn);
 
                 using (var reader = cmd.ExecuteReader())
                 {
@@ -62,9 +62,9 @@ namespace sq_migrate
                 
                 conn.Open();
 
-                var cmd = _dbProvider.CreateCommand($"SELECT COUNT(*) FROM [{_owner}].SavedQueryMeta", conn);
+                var cmd = _dbProvider.CreateCommand($"SELECT COUNT(*) FROM {_owner}.SavedQueryMeta", conn);
 
-                int numberOfQueries = (int)cmd.ExecuteScalar();
+                int numberOfQueries = Convert.ToInt32(cmd.ExecuteScalar());
 
                 return numberOfQueries;
             }
