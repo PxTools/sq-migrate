@@ -10,6 +10,7 @@ namespace sq_migrate
             app.Configure(config =>
             {
                 config.AddCommand<StatsCommand>("stats");
+                config.AddCommand<MigrateCommand>("migrate");
             });
 
             return await app.RunAsync(args);

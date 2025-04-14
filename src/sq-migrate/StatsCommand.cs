@@ -1,10 +1,8 @@
-﻿using PCAxis.Query;
-using Spectre.Console;
+﻿using Spectre.Console;
 using Spectre.Console.Cli;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
-using ValidationResult = Spectre.Console.ValidationResult;
 using System.Text;
+using ValidationResult = Spectre.Console.ValidationResult;
 
 namespace sq_migrate
 {
@@ -18,7 +16,7 @@ namespace sq_migrate
             public StorageTypes StorageType { get; set; }
 
             [CommandOption("-l|--storage-location")]
-            [Description("Search math to the database in case of file based storage")]
+            [Description("Search path to the database in case of file based storage")]
             public string? Database { get; set; }
 
             [CommandOption("-d|--database-type")]
@@ -69,7 +67,7 @@ namespace sq_migrate
 
             AnsiConsole.Markup($"Found [green]{numberOfQueries}[/] saved queries");
 
-            var writer = new StreamWriter(settings.FileOutput ?? "stats.csv", Encoding.UTF8, new FileStreamOptions() {Mode = FileMode.Create, Access = FileAccess.ReadWrite});
+            var writer = new StreamWriter(settings.FileOutput ?? "stats.csv", Encoding.UTF8, new FileStreamOptions() { Mode = FileMode.Create, Access = FileAccess.ReadWrite });
             writer.WriteLine($"LoadedQueryName;LastExecuted;RunCounter;FailCounter;NumberOfPerPart;NumberOfChangeValueOrder;NumberOfDeleteValue;NumberOfDeleteVariable;NumberOfSortTime;NumberOfSplitTime;NumberOfSum;NumberOfChangeDecimals;NumberOfChangeText;NumberOfPivotTimeToHeading;NumberOfChangeCodeTextPresentation");
             var statsResults = await AnsiConsole
                 .Progress()
@@ -112,7 +110,7 @@ namespace sq_migrate
                     return new StatsDatabaseBackend(connectionString, settings.DatabaseSchemaOwner ?? "dbo", new OracleDbProvider());
                 }
             }
-            
+
             var location = AssureStorageLocation(settings.Database);
             return new StatsFileBackend(location);
         }
@@ -130,7 +128,7 @@ namespace sq_migrate
                         => !string.IsNullOrWhiteSpace(location)
                             ? ValidationResult.Success()
                             : ValidationResult.Error("[yellow]Invalid connection string[/]")));
-            
+
         }
 
         private static string AssureStorageLocation(string? location)
@@ -139,14 +137,14 @@ namespace sq_migrate
             {
                 return location;
             }
-                        
+
             return AnsiConsole.Prompt(
                 new TextPrompt<string>("What's the path to the directory where the saved queries are stored?")
                     .Validate(location
                         => Directory.Exists(location)
                             ? ValidationResult.Success()
                             : ValidationResult.Error("[yellow]Invalid path[/]")));
-            
+
         }
     }
 }
