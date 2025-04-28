@@ -1,6 +1,9 @@
-﻿using PCAxis.Query;
+﻿using PCAxis.Paxiom;
+using PCAxis.Query;
+using PxWeb.Api2.Server.Models;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using sq_migrate.Datasource;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Xml;
@@ -82,7 +85,10 @@ namespace sq_migrate
 
             AnsiConsole.Markup($"Source location (Saved queries): [green]{sourceLocation}[/]\n");
             AnsiConsole.Markup($"Destination location: [green]{destinationLocation}[/]\n");
+
+            //TODO Add check for database type PX/CNMM
             AnsiConsole.Markup($"Source path location(PX files): [green]{sourcePath}[/]\n\n");
+            var datasource = new PxFileDatasource(sourcePath);
 
 
             var lookup = GetMap(sourcePath);
@@ -120,7 +126,10 @@ namespace sq_migrate
                         AnsiConsole.Markup($"{name} [red]Failed to parse query[/]\n");
                         continue;
                     }
-                    var sqa = Convert(sq, lookup);
+
+
+
+                    var sqa = Convert(sq, lookup, datasource);
 
                     if (sqa is null)
                     {
@@ -169,7 +178,7 @@ namespace sq_migrate
         }
 
 
-        private PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, Dictionary<string, string> lookup)
+        private PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, Dictionary<string, string> lookup, IDatasource datasource)
         {
             // TODO - Convert the query to the new format
             var sqa = new PxWeb.Api2.Server.Models.SavedQuery();
@@ -215,14 +224,75 @@ namespace sq_migrate
                 sqa.Selection.Selection.Add(selection);
             }
 
+            var builder = datasource.GetBuiler(sq.Sources[0].Source, sqa.Language);
+            if (builder is null)
+            {
+                AnsiConsole.Markup($"[red]Failed to get builder for {sqa.TableId}[/]");
+                return null;
+            }
+
+            builder.BuildForSelection();
+
             //Set Placement to the last Pivot operation
             var op = sq.Workflow.LastOrDefault(s => s.Type == "PIVOT");
             if (op != null)
             {
-
+                var placemnt = Convert(op, builder.Model.Meta);
             }
 
             return sqa;
+        }
+
+        private VariablePlacementType Convert(WorkStep step, PXMeta meta)
+        {
+            // TODO - Convert the work step to the new format
+            if (!string.Equals(step.Type, "PIVOT", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Only pivot steps are vaild");
+            }
+
+            var placement = new VariablePlacementType();
+            placement.Heading = new List<string>();
+            placement.Stub = new List<string>();
+
+            if (!int.TryParse(step.Params["_count"], out int count))
+            {
+                throw new ArgumentException("Count is not a number");
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                var variableName = step.Params[$"{i}.name"];
+                var variablePlacment = step.Params[$"{i}.placement"];
+
+                // Convert the variable name to the variable code
+                var variableCode = meta.Variables.Where(v => string.Equals(v.Name, variableName, StringComparison.OrdinalIgnoreCase))
+                    .Select(v => v.Code)
+                    .FirstOrDefault();
+
+                // Check if the variable code is valid
+                if (string.IsNullOrWhiteSpace(variableCode))
+                {
+                    throw new ArgumentException($"Variable {variableName} not found");
+                }
+
+                // Add the variable code to the placement
+                if (string.Equals(variablePlacment, "Heading", StringComparison.OrdinalIgnoreCase))
+                {
+                    placement.Heading.Add(variableCode);
+                }
+                else if (string.Equals(variablePlacment, "Stub", StringComparison.OrdinalIgnoreCase))
+                {
+                    placement.Stub.Add(variableCode);
+                }
+                else
+                {
+                    throw new ArgumentException($"Placement {variablePlacment} not found");
+                }
+
+            }
+
+            return placement;
         }
 
 
