@@ -6,7 +6,6 @@ using Spectre.Console.Cli;
 using sq_migrate.Datasource;
 using System.ComponentModel;
 using System.Text.Json;
-using System.Xml;
 
 namespace sq_migrate
 {
@@ -91,7 +90,6 @@ namespace sq_migrate
             var datasource = new PxFileDatasource(sourcePath);
 
 
-            var lookup = GetMap(sourcePath);
 
             int counter = 0;
 
@@ -129,7 +127,7 @@ namespace sq_migrate
 
 
 
-                    var sqa = Convert(sq, lookup, datasource);
+                    var sqa = Convert(sq, datasource);
 
                     if (sqa is null)
                     {
@@ -149,98 +147,209 @@ namespace sq_migrate
             return counter;
         }
 
-        private static Dictionary<string, string> GetMap(string sourcePath)
+
+
+
+
+        private PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, IDatasource datasource)
         {
-            var lookup = new Dictionary<string, string>();
-            var menuFile = Path.Combine(sourcePath, "Menu.xml");
 
-            var xdoc = new XmlDocument();
-            xdoc.Load(menuFile);
-
-            string xpath = "//Link";
-            var nodeList = xdoc.SelectNodes(xpath);
-
-            if (nodeList != null)
-            {
-                foreach (XmlElement childEl in nodeList)
-                {
-                    string selection = childEl.GetAttribute("selection").Replace('\\', '/');
-                    string tableId = childEl.GetAttribute("tableId").ToUpper();
-                    if (!lookup.ContainsKey(selection))
-                    {
-                        lookup.Add(selection, tableId);
-                    }
-                }
-
-            }
-
-            return lookup;
-        }
-
-
-        private PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, Dictionary<string, string> lookup, IDatasource datasource)
-        {
-            // TODO - Convert the query to the new format
-            var sqa = new PxWeb.Api2.Server.Models.SavedQuery();
-            sqa.Selection = new PxWeb.Api2.Server.Models.VariablesSelection();
-            sqa.Selection.Selection = new List<PxWeb.Api2.Server.Models.VariableSelection>();
-
-
-            sqa.Language = sq.Sources[0].Language;
-            sqa.Id = sq.LoadedQueryName;
-
-            if (lookup.ContainsKey(sq.Sources[0].Source))
-            {
-                sqa.TableId = lookup[sq.Sources[0].Source];
-            }
-            else
+            //Check that we do not have any operations other then Pivot
+            if (sq.Workflow.FirstOrDefault(step => !string.Equals(step.Type, "PIVOT")) != null)
             {
                 return null;
             }
 
 
-            foreach (var query in sq.Sources[0].Quieries)
+            try
             {
-                var selection = new PxWeb.Api2.Server.Models.VariableSelection();
-                selection.ValueCodes = new List<string>();
-                selection.VariableCode = query.Code;
-                if (query.Selection.Filter.StartsWith("agg:", StringComparison.OrdinalIgnoreCase) || query.Selection.Filter.StartsWith("vs:", StringComparison.OrdinalIgnoreCase))
+
+                // TODO - Convert the query to the new format
+                var sqa = new PxWeb.Api2.Server.Models.SavedQuery();
+                sqa.Selection = new PxWeb.Api2.Server.Models.VariablesSelection();
+                sqa.Selection.Selection = new List<PxWeb.Api2.Server.Models.VariableSelection>();
+
+
+                sqa.Language = sq.Sources[0].Language;
+                sqa.Id = sq.LoadedQueryName;
+
+                var tableId = datasource.ResolveTableId(sq.Sources[0].Source);
+                if (tableId is not null)
                 {
-                    selection.CodeList = query.Selection.Filter.Substring(query.Selection.Filter.IndexOf(':'));
-                    selection.ValueCodes.AddRange(query.Selection.Values.ToList());
-                }
-                else if (string.Equals(query.Selection.Filter, "TOP", StringComparison.OrdinalIgnoreCase))
-                {
-                    selection.ValueCodes.Add($"TOP({query.Selection.Values[0]})");
-                }
-                else if (string.Equals(query.Selection.Filter, "ALL", StringComparison.OrdinalIgnoreCase))
-                {
-                    selection.ValueCodes.Add(query.Selection.Values[0]);
+                    sqa.TableId = tableId;
                 }
                 else
                 {
-                    selection.ValueCodes.AddRange(query.Selection.Values.ToList());
+                    return null;
                 }
-                sqa.Selection.Selection.Add(selection);
-            }
 
-            var builder = datasource.GetBuiler(sq.Sources[0].Source, sqa.Language);
-            if (builder is null)
+
+                foreach (var query in sq.Sources[0].Quieries)
+                {
+                    var selection = new PxWeb.Api2.Server.Models.VariableSelection();
+                    selection.ValueCodes = new List<string>();
+                    selection.VariableCode = query.Code;
+                    if (query.Selection.Filter.StartsWith("agg:", StringComparison.OrdinalIgnoreCase) || query.Selection.Filter.StartsWith("vs:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selection.CodeList = query.Selection.Filter.Substring(query.Selection.Filter.IndexOf(':'));
+                        selection.ValueCodes.AddRange(query.Selection.Values.ToList());
+                    }
+                    else if (string.Equals(query.Selection.Filter, "TOP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selection.ValueCodes.Add($"TOP({query.Selection.Values[0]})");
+                    }
+                    else if (string.Equals(query.Selection.Filter, "ALL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selection.ValueCodes.Add(query.Selection.Values[0]);
+                    }
+                    else
+                    {
+                        selection.ValueCodes.AddRange(query.Selection.Values.ToList());
+                    }
+                    sqa.Selection.Selection.Add(selection);
+                }
+
+                var builder = datasource.GetBuiler(sq.Sources[0].Source, sqa.Language);
+                if (builder is null)
+                {
+                    AnsiConsole.Markup($"[red]Failed to get builder for {sqa.TableId}[/]");
+                    return null;
+                }
+
+                builder.BuildForSelection();
+
+                var (format, outputFormatParams) = TranslateOutputFormat(sq.Output.Type);
+
+                sqa.OutputFormat = format;
+                sqa.OutputFormatParams = outputFormatParams;
+
+                if (string.Equals(sq.Output.Type, "CSV2", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sq.Output.Type, "CSV3", StringComparison.OrdinalIgnoreCase))
+                {
+                    //TODO move everything to the stub last variable should be content variable then time.
+                }
+                else if (string.Equals(sq.Output.Type, "RELATIONAL_TABLE", StringComparison.OrdinalIgnoreCase))
+                {
+                    // TODO move all to the stub stub+heading
+
+                }
+                else
+                {
+                    //Set Placement to the last Pivot operation
+                    var op = sq.Workflow.LastOrDefault(s => s.Type == "PIVOT");
+                    if (op != null)
+                    {
+                        var placemnt = Convert(op, builder.Model.Meta);
+                    }
+                }
+
+
+
+                return sqa;
+
+            }
+            catch (Exception ex)
             {
-                AnsiConsole.Markup($"[red]Failed to get builder for {sqa.TableId}[/]");
-                return null;
+                AnsiConsole.Markup($"[red]Failed to convert query {sq.LoadedQueryName}[/]");
+                AnsiConsole.Markup($"[red]{ex.Message}[/]\n");
             }
 
-            builder.BuildForSelection();
+            return null;
+        }
 
-            //Set Placement to the last Pivot operation
-            var op = sq.Workflow.LastOrDefault(s => s.Type == "PIVOT");
-            if (op != null)
+
+        private (OutputFormatType, List<OutputFormatParamType>) TranslateOutputFormat(string outputFormat)
+        {
+            outputFormat = outputFormat.ToUpper();
+            OutputFormatType format = OutputFormatType.PxEnum;
+            var parameters = new List<OutputFormatParamType>();
+            switch (outputFormat)
             {
-                var placemnt = Convert(op, builder.Model.Meta);
+                case "FILETYPEEXCELX":
+                    format = OutputFormatType.XlsxEnum;
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    break;
+                case "FILETYPEEXCELXDOUBLECOLUMN":
+                    format = OutputFormatType.XlsxEnum;
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    parameters.Add(OutputFormatParamType.UseCodesAndTextsEnum);
+                    break;
+                case "FILETYPECSVWITHOUTHEADINGANDTABULATOR":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.SeparatorTabEnum);
+                    break;
+                case "FILETYPECSVWITHHEADINGANDTABULATOR":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.SeparatorTabEnum);
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    break;
+                case "FILETYPECSVWITHOUTHEADINGANDCOMMA":
+                    format = OutputFormatType.CsvEnum;
+                    // Default separator is comma
+                    break;
+                case "FILETYPECSVWITHHEADINGANDCOMMA":
+                    format = OutputFormatType.CsvEnum;
+                    // Default separator is comma
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    break;
+                case "FILETYPECSVWITHOUTHEADINGANDSPACE":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.SeparatorSpaceEnum);
+                    break;
+                case "FILETYPECSVWITHHEADINGANDSPACE":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.SeparatorSpaceEnum);
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    break;
+                case "FILETYPECSVWITHOUTHEADINGANDSEMICOLON":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.SeparatorSemicolonEnum);
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    break;
+                case "FILETYPECSVWITHHEADINGANDSEMICOLON":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.SeparatorSemicolonEnum);
+                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
+                    break;
+                case "FILETYPECSV2":
+                    format = OutputFormatType.CsvEnum;
+                    // Comma separated
+                    parameters.Add(OutputFormatParamType.UseTextsEnum);
+                    break;
+                case "FILETYPECSV3":
+                    format = OutputFormatType.CsvEnum;
+                    // Comma separated
+                    parameters.Add(OutputFormatParamType.UseCodesEnum);
+                    break;
+                case "FILETYPEJSON":
+                    format = OutputFormatType.JsonPxEnum;
+                    break;
+                case "FILETYPEJSONSTAT":
+                    throw new ArgumentException($"Output format JSON-STAT not longer supported");
+                case "FILETYPEJSONSTAT2":
+                    format = OutputFormatType.JsonStat2Enum;
+                    break;
+                case "FILETYPEHTML5TABLE":
+                    format = OutputFormatType.HtmlEnum;
+                    break;
+                case "FILETYPERELATIONAL":
+                    format = OutputFormatType.CsvEnum;
+                    parameters.Add(OutputFormatParamType.UseTextsEnum);
+                    parameters.Add(OutputFormatParamType.SeparatorTabEnum);
+                    break;
+                case "FILETYPEPX":
+                    format = OutputFormatType.PxEnum;
+                    break;
+                case "TABLE":
+                case "CHART":
+                    // TODO - Check how we should solve when we should present on the web
+                    format = OutputFormatType.JsonStat2Enum;
+                    break;
+                default:
+                    throw new ArgumentException($"Output format {outputFormat} not supported");
             }
 
-            return sqa;
+            return (format, parameters);
         }
 
         private VariablePlacementType Convert(WorkStep step, PXMeta meta)

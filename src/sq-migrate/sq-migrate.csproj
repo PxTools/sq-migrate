@@ -13,8 +13,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
     <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.8.0" />
-    <PackageReference Include="PcAxis.Core" Version="1.2.4" />
+    <PackageReference Include="PcAxis.Core" Version="1.2.5" />
     <PackageReference Include="PcAxis.Query" Version="1.0.9" />
+    <PackageReference Include="PcAxis.Sql" Version="1.4.0" />
     <PackageReference Include="PxWeb.Api2.Server.Models" Version="2.0.0-beta.16" />
     <PackageReference Include="Spectre.Console" Version="0.50.0" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.50.0" />
