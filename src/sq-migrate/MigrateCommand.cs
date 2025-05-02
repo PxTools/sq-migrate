@@ -4,8 +4,8 @@ using PxWeb.Api2.Server.Models;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using sq_migrate.Datasource;
+using sq_migrate.StorageBackends;
 using System.ComponentModel;
-using System.Text.Json;
 
 namespace sq_migrate
 {
@@ -13,21 +13,21 @@ namespace sq_migrate
     {
         public class Settings : CommandSettings
         {
-            [CommandOption("-t|--storage-type")]
+            [CommandOption("-t|--storeage-type")]
             [Description("The type of database")]
             [DefaultValue(StorageTypes.File)]
             public StorageTypes StorageType { get; set; }
 
             [CommandOption("-s|--source-storage-location")]
-            [Description("Path where to find old saved queries that should be migrated")]
+            [Description("Path/connection string where to find old saved queries that should be migrated")]
             public string? Source { get; set; }
 
             [CommandOption("-d|--destination-storage-location")]
-            [Description("Path where to output migrated saved queries")]
+            [Description("Path/connection string where to output migrated saved queries")]
             public string? Destination { get; set; }
 
-            [CommandOption("-p|--store-database-path")]
-            [Description("Path where the Menu.xml and PX files are located")]
+            [CommandOption("-p|--database-path")]
+            [Description("Path where the Menu.xml and PX files are located or Database Id in SqlDb.Config")]
             public string? SourcePath { get; set; }
 
             [CommandOption("-v|--database-vendor")]
@@ -45,16 +45,8 @@ namespace sq_migrate
             [DefaultValue("dbo")]
             public string? DestinationSchemaOwner { get; set; }
 
-            [CommandOption("-c|--source-connection-string")]
-            [Description("The connection string for the source database")]
-            public string? SourceConnectionString { get; set; }
-
-
-            [CommandOption("-b|--destination-connection-string")]
-            [Description("The connection string for the source database")]
-            public string? DestinationConnectionString { get; set; }
-
         }
+
 
         public override Task<int> ExecuteAsync(CommandContext context, Settings settings)
         {
@@ -66,7 +58,7 @@ namespace sq_migrate
 
             if (settings.StorageType == StorageTypes.Database)
             {
-                return MigrateFileAsync(context, settings);
+                return MigrateDatabaseAsync(context, settings);
             }
 
             AnsiConsole.Markup("[red]Failed to initialize storage type[/]");
@@ -76,80 +68,87 @@ namespace sq_migrate
 
         public async Task<int> MigrateFileAsync(CommandContext context, Settings settings)
         {
-            var sourceLocation = AssureSourceLocation(settings.Source);
-            var destinationLocation = AssureDestinationLocation(settings.Destination);
-            var sourcePath = AssureSourcePath(settings.SourcePath);
-
+            var sourceLocation = AssureFileSourceLocation(settings.Source);
+            var destinationLocation = AssureFileDestinationLocation(settings.Destination);
+            var databasePath = AssureFileSourcePath(settings.SourcePath);
 
 
             AnsiConsole.Markup($"Source location (Saved queries): [green]{sourceLocation}[/]\n");
             AnsiConsole.Markup($"Destination location: [green]{destinationLocation}[/]\n");
 
             //TODO Add check for database type PX/CNMM
-            AnsiConsole.Markup($"Source path location(PX files): [green]{sourcePath}[/]\n\n");
-            var datasource = new PxFileDatasource(sourcePath);
+            AnsiConsole.Markup($"Source path location(PX files): [green]{databasePath}[/]\n\n");
+            var datasource = new PxFileDatasource(databasePath);
+
+
+            ISaveQueryStorageBackend sourceBackend = new SavedQueryFileStorageBackend(sourceLocation);
+            var destinationBackend = new SavedQueryFileStorageBackend(destinationLocation);
+            return await MigrateQueries(datasource, sourceBackend, destinationBackend);
+        }
 
 
 
+        public async Task<int> MigrateDatabaseAsync(CommandContext context, Settings settings)
+        {
+            var sourceConnectionString = AssureDatabaseSourceLocation(settings.Source);
+            var destinationConnectionString = AssureDatabaseDestinationLocation(settings.Destination);
+            var databaseId = AssureDatabaseSourcePath(settings.SourcePath);
+            var sourceSchemaOwner = settings.SourceSchemaOwner ?? "dbo";
+            var destinationSchemaOwner = settings.DestinationSchemaOwner ?? "dbo";
+            var databaseType = settings.DatabaseType;
+
+            //TODO fix output
+            AnsiConsole.Markup($"Source location (Saved queries): [green]{sourceConnectionString}[/]\n");
+            AnsiConsole.Markup($"Destination location: [green]{destinationConnectionString}[/]\n");
+
+            //TODO Add check for database type PX/CNMM
+            AnsiConsole.Markup($"Source path location(PX files): [green]{databaseId}[/]\n\n");
+            var datasource = new CnmmDatasource(databaseId);
+
+            var sourceBackend = new SavedQueryDatabaseStorageBackend(databaseType, sourceConnectionString, sourceSchemaOwner);
+            var destinationBackend = new SavedQueryDatabaseStorageBackend(databaseType, destinationConnectionString, destinationSchemaOwner);
+            return await MigrateQueries(datasource, sourceBackend, destinationBackend);
+        }
+
+
+
+        private async Task<int> MigrateQueries(IDatasource datasource, ISaveQueryStorageBackend sourceBackend, ISaveQueryStorageBackend destinationBackend)
+        {
             int counter = 0;
 
-            foreach (var srcFile in Directory.GetFiles(sourceLocation, "*.pxsq", SearchOption.AllDirectories))
+            await foreach (var sq in sourceBackend.GetSavedQueries())
             {
-                var name = Path.GetFileNameWithoutExtension(srcFile);
-                var destFile = Path.Combine(destinationLocation, name.Substring(0, 2), name + ".sq");
 
-                if (File.Exists(destFile))
+                // Check if the query is already migrated
+                if (destinationBackend.AlreadyMigrated(sq.LoadedQueryName))
                 {
-                    AnsiConsole.Markup($"{name} [blue]Already in destionation[/]\n");
+                    AnsiConsole.Markup($"{sq.LoadedQueryName} [blue]Already in destionation[/]\n");
+                    continue;
                 }
-                else
+
+                // Convert the query to the new format
+                var sqa = Convert(sq, datasource);
+
+                // Check if the conversion was successful
+                if (sqa is null)
                 {
-                    // Make sure directory exists for the destination file
-                    if (!Directory.Exists(Path.GetDirectoryName(destFile)))
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(destFile)!);
-                    }
-
-                    // TODO - Convert and save the file
-
-
-                    string query = await File.ReadAllTextAsync(srcFile);
-                    var sq = JsonHelper.Deserialize<PCAxis.Query.SavedQuery>(query) as PCAxis.Query.SavedQuery;
-                    if (sq != null)
-                    {
-                        sq.LoadedQueryName = Path.GetFileNameWithoutExtension(name);
-                    }
-                    else
-                    {
-                        AnsiConsole.Markup($"{name} [red]Failed to parse query[/]\n");
-                        continue;
-                    }
-
-
-
-                    var sqa = Convert(sq, datasource);
-
-                    if (sqa is null)
-                    {
-                        AnsiConsole.Markup($"{name} [red]Failed to convert query[/]\n");
-                        continue;
-                    }
-
-                    var savedQueryString = JsonSerializer.Serialize(sqa);
-                    File.WriteAllText(destFile, savedQueryString);
-
-
-                    counter++;
-                    AnsiConsole.Markup($"{name} [green]Converted[/]\n");
+                    AnsiConsole.Markup($"{sq.LoadedQueryName} [red]Failed to convert query[/]\n");
+                    continue;
                 }
+
+                // Save the converted query to the destination
+                destinationBackend.StoreMigratedQuery(sqa);
+
+                AnsiConsole.Markup($"{sq.LoadedQueryName} [green]Converted[/]\n");
+
+                counter++;
             }
 
             return counter;
         }
 
 
-
-
+        #region "Convert"
 
         private PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, IDatasource datasource)
         {
@@ -191,7 +190,7 @@ namespace sq_migrate
                     selection.VariableCode = query.Code;
                     if (query.Selection.Filter.StartsWith("agg:", StringComparison.OrdinalIgnoreCase) || query.Selection.Filter.StartsWith("vs:", StringComparison.OrdinalIgnoreCase))
                     {
-                        selection.CodeList = query.Selection.Filter.Substring(query.Selection.Filter.IndexOf(':'));
+                        selection.CodeList = query.Selection.Filter.Substring(query.Selection.Filter.IndexOf(':') + 1);
                         selection.ValueCodes.AddRange(query.Selection.Values.ToList());
                     }
                     else if (string.Equals(query.Selection.Filter, "TOP", StringComparison.OrdinalIgnoreCase))
@@ -404,17 +403,10 @@ namespace sq_migrate
             return placement;
         }
 
+        #endregion
 
 
-        public Task<int> MigrateDatabaseAsync(CommandContext context, Settings settings)
-        {
-
-
-            throw new NotImplementedException();
-        }
-
-
-        private static string AssureSourceLocation(string? sourceLocation)
+        private static string AssureFileSourceLocation(string? sourceLocation)
         {
             if (!string.IsNullOrWhiteSpace(sourceLocation) && Directory.Exists(sourceLocation))
             {
@@ -430,8 +422,20 @@ namespace sq_migrate
 
         }
 
+        private static string AssureDatabaseSourceLocation(string? sourceLocation)
+        {
+            if (!string.IsNullOrWhiteSpace(sourceLocation))
+            {
+                return sourceLocation;
+            }
 
-        private static string AssureSourcePath(string? sourcePath)
+            return AnsiConsole.Prompt(
+                new TextPrompt<string>("What's the connection string to the database where the saved queries are stored?"));
+
+        }
+
+
+        private static string AssureFileSourcePath(string? sourcePath)
         {
             if (!string.IsNullOrWhiteSpace(sourcePath) && Directory.Exists(sourcePath))
             {
@@ -447,7 +451,19 @@ namespace sq_migrate
 
         }
 
-        private static string AssureDestinationLocation(string? destinationLocation)
+        private static string AssureDatabaseSourcePath(string? sourcePath)
+        {
+            if (!string.IsNullOrWhiteSpace(sourcePath))
+            {
+                return sourcePath;
+            }
+
+            return AnsiConsole.Prompt(
+                new TextPrompt<string>("Type in the name of the database id where the data is stored?"));
+
+        }
+
+        private static string AssureFileDestinationLocation(string? destinationLocation)
         {
             if (!string.IsNullOrWhiteSpace(destinationLocation))
             {
@@ -455,11 +471,20 @@ namespace sq_migrate
             }
 
             return AnsiConsole.Prompt(
-                new TextPrompt<string>("What's the path to the directory where the saved queries are stored?")
-                    .Validate(location
-                        => Directory.Exists(location)
-                            ? ValidationResult.Success()
-                            : ValidationResult.Error("[yellow]Invalid path[/]")));
+                new TextPrompt<string>("What's the path to the directory where to store the migrated queries?"));
+
+        }
+
+
+        private static string AssureDatabaseDestinationLocation(string? destinationLocation)
+        {
+            if (!string.IsNullOrWhiteSpace(destinationLocation))
+            {
+                return destinationLocation;
+            }
+
+            return AnsiConsole.Prompt(
+                new TextPrompt<string>("What's the connection string to the database where the saved queries should be stored stored?"));
 
         }
 

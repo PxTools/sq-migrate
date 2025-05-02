@@ -5,11 +5,10 @@ namespace sq_migrate.StorageBackends
 {
     public interface ISaveQueryStorageBackend
     {
+        IAsyncEnumerable<SQ.SavedQuery> GetSavedQueries();
 
-        IEnumerator<SQ.SavedQuery> GetSavedQueries();
+        bool AlreadyMigrated(string id);
 
-        bool SavedQueryExists(string id);
-
-        bool StoreSavedQuery(SQA.SavedQuery query);
+        bool StoreMigratedQuery(SQA.SavedQuery query);
     }
 }
