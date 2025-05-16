@@ -30,8 +30,7 @@ namespace sq_migrate.StorageBackends
             }
             else if (type == DatabaseTypes.Oracle)
             {
-                //TODO fix when implemented
-                //_databaseAccessor = new OracleDatabaseAccessor(_connectionString, _databaseId);
+                _databaseAccessor = new OracleDataAccessor(_connectionString, _owner);
             }
             else
             {
