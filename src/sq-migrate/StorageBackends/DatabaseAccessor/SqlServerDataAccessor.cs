@@ -23,12 +23,13 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
             }
         }
 
-        public async IAsyncEnumerable<(int, string)> GetQueries()
+        public async IAsyncEnumerable<(int, string)> GetQueries(int beginFromId)
         {
             using (var conn = new SqlConnection(_connectionString))
             {
                 conn.Open();
-                var command = new SqlCommand("SELECT QueryId, QueryText FROM SavedQueryMeta", conn);
+                var command = new SqlCommand("SELECT QueryId, QueryText FROM SavedQueryMeta where QueryId > @id and QueryId not in (SELECT QueryId FROM SavedQueryMeta2)", conn);
+                command.Parameters.AddWithValue("@id", beginFromId);
                 var reader = command.ExecuteReader();
                 while (await reader.ReadAsync())
                 {
@@ -40,7 +41,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
         }
 
 
-        public void Save(int id, string savedQuery, string mainTable)
+        public void Save(int id, string savedQuery, string mainTable, string databaseType, string databaseId)
         {
             using (var conn = new SqlConnection(_connectionString))
             {
@@ -78,17 +79,15 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
 	                        'Anonymous',
 	                        @title,
 	                        @creationDate,
-	                        'PXSJSON',
+	                        'SQA',
 	                        'D',
 	                        @query,
                             0,
 	                        0
                         );SET IDENTITY_INSERT SavedQueryMeta2 OFF;", conn);
                 cmd.Parameters.AddWithValue("id", id);
-                //TODO fix hardcoded values
-                cmd.Parameters.AddWithValue("databaseType", "CNMM");
-                //TODO fix hardcoded values
-                cmd.Parameters.AddWithValue("databaseId", "MyDB");
+                cmd.Parameters.AddWithValue("databaseType", databaseType);
+                cmd.Parameters.AddWithValue("databaseId", databaseId);
                 cmd.Parameters.AddWithValue("mainTable", mainTable);
                 cmd.Parameters.AddWithValue("title", "");
                 cmd.Parameters.AddWithValue("creationDate", DateTime.Now);

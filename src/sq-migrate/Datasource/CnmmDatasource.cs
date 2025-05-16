@@ -17,11 +17,11 @@ namespace sq_migrate.Datasource
 
         private void InitializeLookup()
         {
-            //TODO : Fix hardcoded language
-            var values = PCAxis.Sql.ApiUtils.ApiUtilStatic.GetMenuLookupTables("sv");
+            string lang = PCAxis.Sql.DbConfig.SqlDbConfigsStatic.DataBases[_databaseId].MainLanguage.code;
+            var values = PCAxis.Sql.ApiUtils.ApiUtilStatic.GetMenuLookupTables(lang);
             foreach (var value in values)
             {
-                var maintable = value.Value.Selection;
+                var maintable = value.Value.Selection.ToUpper();
                 var tableId = value.Key;
                 if (!_lookup.ContainsKey(maintable))
                 {
@@ -49,7 +49,19 @@ namespace sq_migrate.Datasource
 
         private static string GetTableId(string table)
         {
-            return table.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).Last();
+            return table.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).Last().ToUpper();
+        }
+
+        public string? ReverseLookup(string tableId)
+        {
+            foreach (var kvp in _lookup)
+            {
+                if (kvp.Value.Equals(tableId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return kvp.Key;
+                }
+            }
+            return null;
         }
     }
 }

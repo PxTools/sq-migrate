@@ -1,7 +1,4 @@
-﻿using PCAxis.Paxiom;
-using PCAxis.Query;
-using PxWeb.Api2.Server.Models;
-using Spectre.Console;
+﻿using Spectre.Console;
 using Spectre.Console.Cli;
 using sq_migrate.Datasource;
 using sq_migrate.StorageBackends;
@@ -18,6 +15,11 @@ namespace sq_migrate
             [DefaultValue(StorageTypes.File)]
             public StorageTypes StorageType { get; set; }
 
+            [CommandOption("-x|--source-type")]
+            [Description("The type of database PX/CNMM")]
+            [DefaultValue(SourceTypes.PX)]
+            public SourceTypes SourceType { get; set; }
+
             [CommandOption("-s|--source-storage-location")]
             [Description("Path/connection string where to find old saved queries that should be migrated")]
             public string? Source { get; set; }
@@ -26,7 +28,7 @@ namespace sq_migrate
             [Description("Path/connection string where to output migrated saved queries")]
             public string? Destination { get; set; }
 
-            [CommandOption("-p|--database-path")]
+            [CommandOption("-p|--database")]
             [Description("Path where the Menu.xml and PX files are located or Database Id in SqlDb.Config")]
             public string? SourcePath { get; set; }
 
@@ -35,35 +37,64 @@ namespace sq_migrate
             [DefaultValue(DatabaseTypes.MSSQL)]
             public DatabaseTypes DatabaseType { get; set; }
 
-            [CommandOption("-o|--source-database-schema-owner")]
-            [Description("The owner of the source database table")]
+            [CommandOption("-o|--database-schema-owner")]
+            [Description("The owner of the database tables")]
             [DefaultValue("dbo")]
             public string? SourceSchemaOwner { get; set; }
 
-            [CommandOption("-u|--destination-database-schema-owner")]
-            [Description("The owner of the source database table")]
-            [DefaultValue("dbo")]
-            public string? DestinationSchemaOwner { get; set; }
 
         }
 
 
-        public override Task<int> ExecuteAsync(CommandContext context, Settings settings)
-        {
+        private HashSet<string> _failedQueries = new HashSet<string>();
 
+
+        public async override Task<int> ExecuteAsync(CommandContext context, Settings settings)
+        {
+            ReadFailedQueries();
+
+            int count = 0;
             if (settings.StorageType == StorageTypes.File)
             {
-                return MigrateFileAsync(context, settings);
+                count = await MigrateFileAsync(context, settings);
             }
 
             if (settings.StorageType == StorageTypes.Database)
             {
-                return MigrateDatabaseAsync(context, settings);
+                count = await MigrateDatabaseAsync(context, settings);
             }
 
-            AnsiConsole.Markup("[red]Failed to initialize storage type[/]");
+            AnsiConsole.Markup($"[green]{count}[/] queries converted\n");
 
-            return Task.FromResult(-1);
+            WriteFailedQueries();
+
+            return 0;
+        }
+
+        private void WriteFailedQueries()
+        {
+            using var writer = new StreamWriter("failed-queries.txt", false);
+            if (_failedQueries.Count > 0)
+            {
+                foreach (var query in _failedQueries)
+                {
+                    writer.WriteLine(query);
+                }
+            }
+        }
+
+        private void ReadFailedQueries()
+        {
+            if (File.Exists("failed-queries.txt"))
+            {
+                using var reader = new StreamReader("failed-queries.txt");
+
+                string? line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    _failedQueries.Add(line);
+                }
+            }
         }
 
         public async Task<int> MigrateFileAsync(CommandContext context, Settings settings)
@@ -71,18 +102,18 @@ namespace sq_migrate
             var sourceLocation = AssureFileSourceLocation(settings.Source);
             var destinationLocation = AssureFileDestinationLocation(settings.Destination);
             var databasePath = AssureFileSourcePath(settings.SourcePath);
+            var sourceType = settings.SourceType;
 
 
             AnsiConsole.Markup($"Source location (Saved queries): [green]{sourceLocation}[/]\n");
             AnsiConsole.Markup($"Destination location: [green]{destinationLocation}[/]\n");
 
-            //TODO Add check for database type PX/CNMM
             AnsiConsole.Markup($"Source path location(PX files): [green]{databasePath}[/]\n\n");
-            var datasource = new PxFileDatasource(databasePath);
+            var datasource = CreateDatasource(databasePath, sourceType);
 
 
-            ISaveQueryStorageBackend sourceBackend = new SavedQueryFileStorageBackend(sourceLocation);
-            var destinationBackend = new SavedQueryFileStorageBackend(destinationLocation);
+            ISaveQueryStorageBackend sourceBackend = new SavedQueryFileStorageBackend(sourceLocation, _failedQueries);
+            var destinationBackend = new SavedQueryFileStorageBackend(destinationLocation, _failedQueries);
             return await MigrateQueries(datasource, sourceBackend, destinationBackend);
         }
 
@@ -91,26 +122,40 @@ namespace sq_migrate
         public async Task<int> MigrateDatabaseAsync(CommandContext context, Settings settings)
         {
             var sourceConnectionString = AssureDatabaseSourceLocation(settings.Source);
-            var destinationConnectionString = AssureDatabaseDestinationLocation(settings.Destination);
             var databaseId = AssureDatabaseSourcePath(settings.SourcePath);
             var sourceSchemaOwner = settings.SourceSchemaOwner ?? "dbo";
-            var destinationSchemaOwner = settings.DestinationSchemaOwner ?? "dbo";
             var databaseType = settings.DatabaseType;
+            var storageType = settings.StorageType;
+            var sourceType = settings.SourceType;
 
             //TODO fix output
             AnsiConsole.Markup($"Source location (Saved queries): [green]{sourceConnectionString}[/]\n");
-            AnsiConsole.Markup($"Destination location: [green]{destinationConnectionString}[/]\n");
-
-            //TODO Add check for database type PX/CNMM
             AnsiConsole.Markup($"Source path location(PX files): [green]{databaseId}[/]\n\n");
-            var datasource = new CnmmDatasource(databaseId);
 
-            var sourceBackend = new SavedQueryDatabaseStorageBackend(databaseType, sourceConnectionString, sourceSchemaOwner);
-            var destinationBackend = new SavedQueryDatabaseStorageBackend(databaseType, destinationConnectionString, destinationSchemaOwner);
+            var datasource = CreateDatasource(databaseId, sourceType);
+
+            var dbType = sourceType == SourceTypes.PX ? "PX" : "CNMM";
+
+            var sourceBackend = new SavedQueryDatabaseStorageBackend(databaseType, sourceConnectionString, sourceSchemaOwner, dbType, databaseId, _failedQueries);
+            var destinationBackend = new SavedQueryDatabaseStorageBackend(databaseType, sourceConnectionString, sourceSchemaOwner, dbType, databaseId, _failedQueries);
+
             return await MigrateQueries(datasource, sourceBackend, destinationBackend);
         }
 
+        private static IDatasource CreateDatasource(string databaseId, SourceTypes sourceType)
+        {
+            IDatasource datasource;
+            if (sourceType == SourceTypes.PX)
+            {
+                datasource = new PxFileDatasource(databaseId);
+            }
+            else
+            {
+                datasource = new CnmmDatasource(databaseId);
+            }
 
+            return datasource;
+        }
 
         private async Task<int> MigrateQueries(IDatasource datasource, ISaveQueryStorageBackend sourceBackend, ISaveQueryStorageBackend destinationBackend)
         {
@@ -118,6 +163,12 @@ namespace sq_migrate
 
             await foreach (var sq in sourceBackend.GetSavedQueries())
             {
+
+                // Check if the query has a previouse conversion attempt
+                if (_failedQueries.Contains(sq.LoadedQueryName))
+                {
+                    continue;
+                }
 
                 // Check if the query is already migrated
                 if (destinationBackend.AlreadyMigrated(sq.LoadedQueryName))
@@ -127,7 +178,7 @@ namespace sq_migrate
                 }
 
                 // Convert the query to the new format
-                var sqa = Convert(sq, datasource);
+                var sqa = ConvertUtil.Convert(sq, datasource, _failedQueries);
 
                 // Check if the conversion was successful
                 if (sqa is null)
@@ -137,7 +188,7 @@ namespace sq_migrate
                 }
 
                 // Save the converted query to the destination
-                destinationBackend.StoreMigratedQuery(sqa);
+                destinationBackend.StoreMigratedQuery(sqa, datasource);
 
                 AnsiConsole.Markup($"{sq.LoadedQueryName} [green]Converted[/]\n");
 
@@ -146,264 +197,6 @@ namespace sq_migrate
 
             return counter;
         }
-
-
-        #region "Convert"
-
-        private PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, IDatasource datasource)
-        {
-
-            //Check that we do not have any operations other then Pivot
-            if (sq.Workflow.FirstOrDefault(step => !string.Equals(step.Type, "PIVOT")) != null)
-            {
-                return null;
-            }
-
-
-            try
-            {
-
-                // TODO - Convert the query to the new format
-                var sqa = new PxWeb.Api2.Server.Models.SavedQuery();
-                sqa.Selection = new PxWeb.Api2.Server.Models.VariablesSelection();
-                sqa.Selection.Selection = new List<PxWeb.Api2.Server.Models.VariableSelection>();
-
-
-                sqa.Language = sq.Sources[0].Language;
-                sqa.Id = sq.LoadedQueryName;
-
-                var tableId = datasource.ResolveTableId(sq.Sources[0].Source);
-                if (tableId is not null)
-                {
-                    sqa.TableId = tableId;
-                }
-                else
-                {
-                    return null;
-                }
-
-
-                foreach (var query in sq.Sources[0].Quieries)
-                {
-                    var selection = new PxWeb.Api2.Server.Models.VariableSelection();
-                    selection.ValueCodes = new List<string>();
-                    selection.VariableCode = query.Code;
-                    if (query.Selection.Filter.StartsWith("agg:", StringComparison.OrdinalIgnoreCase) || query.Selection.Filter.StartsWith("vs:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        selection.CodeList = query.Selection.Filter.Substring(query.Selection.Filter.IndexOf(':') + 1);
-                        selection.ValueCodes.AddRange(query.Selection.Values.ToList());
-                    }
-                    else if (string.Equals(query.Selection.Filter, "TOP", StringComparison.OrdinalIgnoreCase))
-                    {
-                        selection.ValueCodes.Add($"TOP({query.Selection.Values[0]})");
-                    }
-                    else if (string.Equals(query.Selection.Filter, "ALL", StringComparison.OrdinalIgnoreCase))
-                    {
-                        selection.ValueCodes.Add(query.Selection.Values[0]);
-                    }
-                    else
-                    {
-                        selection.ValueCodes.AddRange(query.Selection.Values.ToList());
-                    }
-                    sqa.Selection.Selection.Add(selection);
-                }
-
-                var builder = datasource.GetBuiler(sq.Sources[0].Source, sqa.Language);
-                if (builder is null)
-                {
-                    AnsiConsole.Markup($"[red]Failed to get builder for {sqa.TableId}[/]");
-                    return null;
-                }
-
-                builder.BuildForSelection();
-
-                var (format, outputFormatParams) = TranslateOutputFormat(sq.Output.Type);
-
-                sqa.OutputFormat = format;
-                sqa.OutputFormatParams = outputFormatParams;
-
-                if (string.Equals(sq.Output.Type, "CSV2", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(sq.Output.Type, "CSV3", StringComparison.OrdinalIgnoreCase))
-                {
-                    //TODO move everything to the stub last variable should be content variable then time.
-                }
-                else if (string.Equals(sq.Output.Type, "RELATIONAL_TABLE", StringComparison.OrdinalIgnoreCase))
-                {
-                    // TODO move all to the stub stub+heading
-
-                }
-                else
-                {
-                    //Set Placement to the last Pivot operation
-                    var op = sq.Workflow.LastOrDefault(s => s.Type == "PIVOT");
-                    if (op != null)
-                    {
-                        var placemnt = Convert(op, builder.Model.Meta);
-                    }
-                }
-
-
-
-                return sqa;
-
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.Markup($"[red]Failed to convert query {sq.LoadedQueryName}[/]");
-                AnsiConsole.Markup($"[red]{ex.Message}[/]\n");
-            }
-
-            return null;
-        }
-
-
-        private (OutputFormatType, List<OutputFormatParamType>) TranslateOutputFormat(string outputFormat)
-        {
-            outputFormat = outputFormat.ToUpper();
-            OutputFormatType format = OutputFormatType.PxEnum;
-            var parameters = new List<OutputFormatParamType>();
-            switch (outputFormat)
-            {
-                case "FILETYPEEXCELX":
-                    format = OutputFormatType.XlsxEnum;
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    break;
-                case "FILETYPEEXCELXDOUBLECOLUMN":
-                    format = OutputFormatType.XlsxEnum;
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    parameters.Add(OutputFormatParamType.UseCodesAndTextsEnum);
-                    break;
-                case "FILETYPECSVWITHOUTHEADINGANDTABULATOR":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.SeparatorTabEnum);
-                    break;
-                case "FILETYPECSVWITHHEADINGANDTABULATOR":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.SeparatorTabEnum);
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    break;
-                case "FILETYPECSVWITHOUTHEADINGANDCOMMA":
-                    format = OutputFormatType.CsvEnum;
-                    // Default separator is comma
-                    break;
-                case "FILETYPECSVWITHHEADINGANDCOMMA":
-                    format = OutputFormatType.CsvEnum;
-                    // Default separator is comma
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    break;
-                case "FILETYPECSVWITHOUTHEADINGANDSPACE":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.SeparatorSpaceEnum);
-                    break;
-                case "FILETYPECSVWITHHEADINGANDSPACE":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.SeparatorSpaceEnum);
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    break;
-                case "FILETYPECSVWITHOUTHEADINGANDSEMICOLON":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.SeparatorSemicolonEnum);
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    break;
-                case "FILETYPECSVWITHHEADINGANDSEMICOLON":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.SeparatorSemicolonEnum);
-                    parameters.Add(OutputFormatParamType.IncludeTitleEnum);
-                    break;
-                case "FILETYPECSV2":
-                    format = OutputFormatType.CsvEnum;
-                    // Comma separated
-                    parameters.Add(OutputFormatParamType.UseTextsEnum);
-                    break;
-                case "FILETYPECSV3":
-                    format = OutputFormatType.CsvEnum;
-                    // Comma separated
-                    parameters.Add(OutputFormatParamType.UseCodesEnum);
-                    break;
-                case "FILETYPEJSON":
-                    format = OutputFormatType.JsonPxEnum;
-                    break;
-                case "FILETYPEJSONSTAT":
-                    throw new ArgumentException($"Output format JSON-STAT not longer supported");
-                case "FILETYPEJSONSTAT2":
-                    format = OutputFormatType.JsonStat2Enum;
-                    break;
-                case "FILETYPEHTML5TABLE":
-                    format = OutputFormatType.HtmlEnum;
-                    break;
-                case "FILETYPERELATIONAL":
-                    format = OutputFormatType.CsvEnum;
-                    parameters.Add(OutputFormatParamType.UseTextsEnum);
-                    parameters.Add(OutputFormatParamType.SeparatorTabEnum);
-                    break;
-                case "FILETYPEPX":
-                    format = OutputFormatType.PxEnum;
-                    break;
-                case "TABLE":
-                case "CHART":
-                    // TODO - Check how we should solve when we should present on the web
-                    format = OutputFormatType.JsonStat2Enum;
-                    break;
-                default:
-                    throw new ArgumentException($"Output format {outputFormat} not supported");
-            }
-
-            return (format, parameters);
-        }
-
-        private VariablePlacementType Convert(WorkStep step, PXMeta meta)
-        {
-            // TODO - Convert the work step to the new format
-            if (!string.Equals(step.Type, "PIVOT", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("Only pivot steps are vaild");
-            }
-
-            var placement = new VariablePlacementType();
-            placement.Heading = new List<string>();
-            placement.Stub = new List<string>();
-
-            if (!int.TryParse(step.Params["_count"], out int count))
-            {
-                throw new ArgumentException("Count is not a number");
-            }
-
-            for (int i = 0; i < count; i++)
-            {
-                var variableName = step.Params[$"{i}.name"];
-                var variablePlacment = step.Params[$"{i}.placement"];
-
-                // Convert the variable name to the variable code
-                var variableCode = meta.Variables.Where(v => string.Equals(v.Name, variableName, StringComparison.OrdinalIgnoreCase))
-                    .Select(v => v.Code)
-                    .FirstOrDefault();
-
-                // Check if the variable code is valid
-                if (string.IsNullOrWhiteSpace(variableCode))
-                {
-                    throw new ArgumentException($"Variable {variableName} not found");
-                }
-
-                // Add the variable code to the placement
-                if (string.Equals(variablePlacment, "Heading", StringComparison.OrdinalIgnoreCase))
-                {
-                    placement.Heading.Add(variableCode);
-                }
-                else if (string.Equals(variablePlacment, "Stub", StringComparison.OrdinalIgnoreCase))
-                {
-                    placement.Stub.Add(variableCode);
-                }
-                else
-                {
-                    throw new ArgumentException($"Placement {variablePlacment} not found");
-                }
-
-            }
-
-            return placement;
-        }
-
-        #endregion
 
 
         private static string AssureFileSourceLocation(string? sourceLocation)
@@ -472,19 +265,6 @@ namespace sq_migrate
 
             return AnsiConsole.Prompt(
                 new TextPrompt<string>("What's the path to the directory where to store the migrated queries?"));
-
-        }
-
-
-        private static string AssureDatabaseDestinationLocation(string? destinationLocation)
-        {
-            if (!string.IsNullOrWhiteSpace(destinationLocation))
-            {
-                return destinationLocation;
-            }
-
-            return AnsiConsole.Prompt(
-                new TextPrompt<string>("What's the connection string to the database where the saved queries should be stored stored?"));
 
         }
 

@@ -1,4 +1,5 @@
-﻿using SQ = PCAxis.Query;
+﻿using sq_migrate.Datasource;
+using SQ = PCAxis.Query;
 using SQA = PxWeb.Api2.Server.Models;
 
 namespace sq_migrate.StorageBackends
@@ -9,6 +10,6 @@ namespace sq_migrate.StorageBackends
 
         bool AlreadyMigrated(string id);
 
-        bool StoreMigratedQuery(SQA.SavedQuery query);
+        bool StoreMigratedQuery(SQA.SavedQuery query, IDatasource datasource);
     }
 }

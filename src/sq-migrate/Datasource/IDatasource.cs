@@ -7,5 +7,7 @@ namespace sq_migrate.Datasource
         IPXModelBuilder? GetBuiler(string table, string language);
 
         string? ResolveTableId(string path);
+
+        string? ReverseLookup(string tableId);
     }
 }

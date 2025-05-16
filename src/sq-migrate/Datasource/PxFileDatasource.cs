@@ -62,5 +62,17 @@ namespace sq_migrate.Datasource
         {
             return _lookup[path];
         }
+
+        public string? ReverseLookup(string tableId)
+        {
+            foreach (var kvp in _lookup)
+            {
+                if (kvp.Value.Equals(tableId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return kvp.Key;
+                }
+            }
+            return null;
+        }
     }
 }
