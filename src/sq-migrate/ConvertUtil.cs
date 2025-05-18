@@ -11,15 +11,15 @@ namespace sq_migrate
         public static PxWeb.Api2.Server.Models.SavedQuery? Convert(PCAxis.Query.SavedQuery sq, IDatasource datasource, HashSet<string> failedQueries)
         {
 
-            //Check that we do not have any operations other then Pivot
+            // Check that we do not have any operations other then Pivot since they are not implemented in the API yet.
             if (sq.Workflow.FirstOrDefault(step => !string.Equals(step.Type, "PIVOT")) != null)
             {
                 return null;
             }
 
-
             try
             {
+                // Init the saved query 
                 var sqa = new PxWeb.Api2.Server.Models.SavedQuery();
                 sqa.Selection = new PxWeb.Api2.Server.Models.VariablesSelection();
                 sqa.Selection.Selection = new List<PxWeb.Api2.Server.Models.VariableSelection>();
@@ -28,6 +28,7 @@ namespace sq_migrate
                 sqa.Language = sq.Sources[0].Language;
                 sqa.Id = sq.LoadedQueryName;
 
+                // Resolves the TableId from the datasource
                 var tableId = datasource.ResolveTableId(sq.Sources[0].Source);
                 if (tableId is not null)
                 {
@@ -38,7 +39,17 @@ namespace sq_migrate
                     return null;
                 }
 
+                // Read in the metadata for the table
+                var builder = datasource.GetBuiler(sq.Sources[0].Source, sqa.Language);
+                if (builder is null)
+                {
+                    AnsiConsole.Markup($"[red]Failed to get builder for {sqa.TableId}[/]");
+                    return null;
+                }
 
+                builder.BuildForSelection();
+
+                // Loop throw all the variables in the old svaed query and add them to the new saved query
                 foreach (var query in sq.Sources[0].Quieries)
                 {
                     var selection = new PxWeb.Api2.Server.Models.VariableSelection();
@@ -69,14 +80,21 @@ namespace sq_migrate
                     sqa.Selection.Selection.Add(selection);
                 }
 
-                var builder = datasource.GetBuiler(sq.Sources[0].Source, sqa.Language);
-                if (builder is null)
+                // Check if we have variables that might have been removed from the old saved query Eliminate SingleContents and variables that are not eliminaable
+                var definedVariableCodes = new HashSet<string>(sq.Sources[0].Quieries.Select(q => q.Code));
+                foreach (var variable in builder.Model.Meta.Variables)
                 {
-                    AnsiConsole.Markup($"[red]Failed to get builder for {sqa.TableId}[/]");
-                    return null;
+                    if (!definedVariableCodes.Contains(variable.Code))
+                    {
+                        var selection = new PxWeb.Api2.Server.Models.VariableSelection();
+                        selection.ValueCodes = new List<string>();
+                        selection.VariableCode = variable.Code;
+                        selection.ValueCodes.Add("*");
+                        sqa.Selection.Selection.Add(selection);
+                    }
                 }
 
-                builder.BuildForSelection();
+
 
                 var (format, outputFormatParams) = TranslateOutputFormat(sq.Output.Type);
 

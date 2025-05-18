@@ -32,7 +32,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
             using (var conn = new OracleConnection(_connectionString))
             {
                 conn.Open();
-                var command = new OracleCommand("SELECT QueryId, QueryText FROM SavedQueryMeta where QueryId > :id and QueryId not in (SELECT QueryId FROM SavedQueryMeta2)", conn);
+                var command = new OracleCommand("SELECT QueryId, QueryText FROM SavedQueryMeta where QueryId > :id", conn);
                 command.Parameters.Add("id", beginFromId);
                 var reader = command.ExecuteReader();
                 while (await reader.ReadAsync())

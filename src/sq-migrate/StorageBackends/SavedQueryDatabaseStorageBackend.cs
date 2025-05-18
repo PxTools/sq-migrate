@@ -77,7 +77,7 @@ namespace sq_migrate.StorageBackends
 
                     //Updated last position
                     counter++;
-                    if (counter % 1000 == 0)
+                    if (counter % 100 == 0)
                     {
                         File.WriteAllText("last-id.txt", id.ToString());
                     }
