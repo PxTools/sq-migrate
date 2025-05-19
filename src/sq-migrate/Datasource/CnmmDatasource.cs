@@ -21,7 +21,7 @@ namespace sq_migrate.Datasource
             var values = PCAxis.Sql.ApiUtils.ApiUtilStatic.GetMenuLookupTables(lang);
             foreach (var value in values)
             {
-                var maintable = value.Value.Selection.ToUpper();
+                var maintable = value.Value.Selection;
                 var tableId = value.Key;
                 if (!_lookup.ContainsKey(maintable))
                 {
@@ -49,7 +49,7 @@ namespace sq_migrate.Datasource
 
         private static string GetTableId(string table)
         {
-            return table.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).Last().ToUpper();
+            return table.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).Last();
         }
 
         public string? ReverseLookup(string tableId)

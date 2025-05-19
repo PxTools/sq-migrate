@@ -27,7 +27,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
                 }
                 var command = new OracleCommand($"SELECT COUNT(*) FROM {_schema}.SavedQueryMeta2 WHERE QueryId = :id", _connection);
                 command.Parameters.Add("id", id);
-                var count = (int)command.ExecuteScalar();
+                var count = Convert.ToInt32(command.ExecuteScalar());
                 return count > 0;
             }
         }
@@ -41,7 +41,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
                     _connection.Open();
                 }
 
-                var command = new OracleCommand("SELECT QueryId, QueryText FROM SavedQueryMeta where QueryId > :id", _connection);
+                var command = new OracleCommand($"SELECT QueryId, QueryText FROM {_schema}.SavedQueryMeta where QueryId > :id order by 1", _connection);
                 command.Parameters.Add("id", beginFromId);
                 var reader = command.ExecuteReader();
                 while (await reader.ReadAsync())
@@ -71,7 +71,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
 	                        DataSourceType, 
 	                        DatabaseId, 
 	                        DataSourceId, 
-	                        ""Status"", 
+	                        Status, 
 	                        StatusUse, 
 	                        StatusChange, 
 	                        OwnerId, 
