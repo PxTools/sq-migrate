@@ -5,24 +5,24 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
     public class SqlServerDataAccessor : IDatabaseAccessor
     {
         private readonly string _connectionString;
-        private readonly SqlConnection conn;
+        private readonly SqlConnection _connection;
 
         public SqlServerDataAccessor(string connectionString)
         {
             _connectionString = connectionString;
-            conn = new SqlConnection(_connectionString);
+            _connection = new SqlConnection(_connectionString);
         }
 
         public bool Exists(int id)
         {
-            //using (var conn = new SqlConnection(_connectionString))
+            //using (var _connection = new SqlConnection(_connectionString))
             {
-                if (conn.State != System.Data.ConnectionState.Open)
+                if (_connection.State != System.Data.ConnectionState.Open)
                 {
-                    conn.Open();
+                    _connection.Open();
                 }
 
-                var command = new SqlCommand("SELECT COUNT(*) FROM SavedQueryMeta2 WHERE QueryId = @id", conn);
+                var command = new SqlCommand("SELECT COUNT(*) FROM SavedQueryMeta2 WHERE QueryId = @id", _connection);
                 command.Parameters.AddWithValue("@id", id);
                 var count = (int)command.ExecuteScalar();
                 return count > 0;
@@ -31,13 +31,13 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
 
         public async IAsyncEnumerable<(int, string)> GetQueries(int beginFromId)
         {
-            //using (var conn = new SqlConnection(_connectionString))
+            //using (var _connection = new SqlConnection(_connectionString))
             {
-                if (conn.State != System.Data.ConnectionState.Open)
+                if (_connection.State != System.Data.ConnectionState.Open)
                 {
-                    conn.Open();
+                    _connection.Open();
                 }
-                var command = new SqlCommand("SELECT QueryId, QueryText FROM SavedQueryMeta where QueryId > @id", conn);
+                var command = new SqlCommand("SELECT QueryId, QueryText FROM SavedQueryMeta where QueryId > @id", _connection);
                 command.Parameters.AddWithValue("@id", beginFromId);
                 var reader = command.ExecuteReader();
                 while (await reader.ReadAsync())
@@ -53,11 +53,11 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
 
         public void Save(int id, string savedQuery, string mainTable, string databaseType, string databaseId)
         {
-            //using (var conn = new SqlConnection(_connectionString))
+            //using (var _connection = new SqlConnection(_connectionString))
             {
-                if (conn.State != System.Data.ConnectionState.Open)
+                if (_connection.State != System.Data.ConnectionState.Open)
                 {
-                    conn.Open();
+                    _connection.Open();
                 }
                 var cmd = new SqlCommand(
                     @"  SET IDENTITY_INSERT SavedQueryMeta2 ON;
@@ -97,7 +97,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
 	                        @query,
                             0,
 	                        0
-                        );SET IDENTITY_INSERT SavedQueryMeta2 OFF;", conn);
+                        );SET IDENTITY_INSERT SavedQueryMeta2 OFF;", _connection);
                 cmd.Parameters.AddWithValue("id", id);
                 cmd.Parameters.AddWithValue("databaseType", databaseType);
                 cmd.Parameters.AddWithValue("databaseId", databaseId);
