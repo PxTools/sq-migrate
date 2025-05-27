@@ -46,7 +46,7 @@ namespace sq_migrate.StorageBackends
 
         public bool AlreadyMigrated(string id)
         {
-            return File.Exists(Path.Combine(_location, id + ".sqa"));
+            return File.Exists(Path.Combine(_location, (id ?? "NN").Substring(0, 2), id + ".sqa"));
         }
 
         public bool StoreMigratedQuery(PxWeb.Api2.Server.Models.SavedQuery query, IDatasource datasource)

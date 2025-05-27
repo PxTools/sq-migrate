@@ -25,7 +25,7 @@ namespace sq_migrate
             public string? Source { get; set; }
 
             [CommandOption("-d|--destination-storage-location")]
-            [Description("Path/connection string where to output migrated saved queries")]
+            [Description("Path where to output migrated saved queries")]
             public string? Destination { get; set; }
 
             [CommandOption("-p|--database")]
@@ -128,7 +128,6 @@ namespace sq_migrate
             var storageType = settings.StorageType;
             var sourceType = settings.SourceType;
 
-            //TODO fix output
             AnsiConsole.Markup($"Source location (Saved queries): [green]{sourceConnectionString}[/]\n");
             AnsiConsole.Markup($"Source path location(PX files): [green]{databaseId}[/]\n\n");
 
@@ -167,13 +166,14 @@ namespace sq_migrate
                 // Check if the query has a previouse conversion attempt
                 if (_failedQueries.Contains(sq.LoadedQueryName))
                 {
+                    AnsiConsole.Markup($"{sq.LoadedQueryName} [yellow]Skiped failed in previouse run[/]\n");
                     continue;
                 }
 
                 // Check if the query is already migrated
                 if (destinationBackend.AlreadyMigrated(sq.LoadedQueryName))
                 {
-                    AnsiConsole.Markup($"{sq.LoadedQueryName} [blue]Already in destionation[/]\n");
+                    AnsiConsole.Markup($"{sq.LoadedQueryName} [blue]Already in destination[/]\n");
                     continue;
                 }
 
