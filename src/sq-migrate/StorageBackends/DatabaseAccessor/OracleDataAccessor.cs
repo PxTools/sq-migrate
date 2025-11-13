@@ -107,7 +107,7 @@ namespace sq_migrate.StorageBackends.DatabaseAccessor
                 cmd.Parameters.Add("databaseId", databaseId);
                 cmd.Parameters.Add("mainTable", mainTable);
                 cmd.Parameters.Add("title", " ");
-                cmd.Parameters.Add("query", savedQuery);
+                cmd.Parameters.Add("query", OracleDbType.Clob).Value = savedQuery;
 
                 cmd.ExecuteNonQuery();
             }
