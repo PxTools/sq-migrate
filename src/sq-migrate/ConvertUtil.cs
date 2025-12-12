@@ -69,6 +69,10 @@ namespace sq_migrate
                     {
                         selection.ValueCodes.Add($"TOP({query.Selection.Values[0]})");
                     }
+                    else if (string.Equals(query.Selection.Filter, "FROM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selection.ValueCodes.Add($"FROM({query.Selection.Values[0]})");
+                    }
                     else if (string.Equals(query.Selection.Filter, "ALL", StringComparison.OrdinalIgnoreCase))
                     {
                         selection.ValueCodes.Add(query.Selection.Values[0]);
