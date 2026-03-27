@@ -15,6 +15,7 @@ namespace sq_migrate.StorageBackends
         private readonly string _databaseType;
         private readonly string _databaseId;
         private readonly HashSet<string> _skipList;
+        private readonly string _lastIdFilePath;
 
         public SavedQueryDatabaseStorageBackend(DatabaseTypes type, string connectionString, string owner, string databaseType, string databaseId, HashSet<string> skipList)
         {
@@ -23,6 +24,10 @@ namespace sq_migrate.StorageBackends
             _databaseType = databaseType;
             _databaseId = databaseId;
             _skipList = skipList;
+
+            var appDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "sq-migrate");
+            Directory.CreateDirectory(appDataDirectory);
+            _lastIdFilePath = Path.Combine(appDataDirectory, "last-id.txt");
 
             if (type == DatabaseTypes.MSSQL)
             {
@@ -54,9 +59,9 @@ namespace sq_migrate.StorageBackends
         public async IAsyncEnumerable<SQ.SavedQuery> GetSavedQueries()
         {
             int beginFromId = -1;
-            if (File.Exists("last-id.txt"))
+            if (File.Exists(_lastIdFilePath))
             {
-                string text = File.ReadAllText("last-id.txt").Trim();
+                string text = File.ReadAllText(_lastIdFilePath).Trim();
                 int.TryParse(text, out beginFromId);
             }
 
@@ -79,7 +84,7 @@ namespace sq_migrate.StorageBackends
                     counter++;
                     if (counter % 100 == 0)
                     {
-                        File.WriteAllText("last-id.txt", id.ToString());
+                        File.WriteAllText(_lastIdFilePath, id.ToString());
                     }
                 }
                 else
