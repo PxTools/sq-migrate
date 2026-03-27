@@ -51,6 +51,11 @@ namespace sq_migrate
 
         public async override Task<int> ExecuteAsync(CommandContext context, Settings settings)
         {
+            try
+            {                           
+
+            FileLogger.Info($"Migrate command started. StorageType={settings.StorageType}, SourceType={settings.SourceType}, DatabaseType={settings.DatabaseType}");
+
             ReadFailedQueries();
 
             int count = 0;
@@ -68,7 +73,16 @@ namespace sq_migrate
 
             WriteFailedQueries();
 
+            FileLogger.Info($"Migrate command completed. ConvertedQueries={count}, FailedQueries={_failedQueries.Count}");
+
             return 0;
+
+            }
+            catch (Exception e)
+            {
+                FileLogger.Error("An error occurred during migration", e);
+                throw;
+            }
         }
 
         private void WriteFailedQueries()
@@ -159,7 +173,7 @@ namespace sq_migrate
         private async Task<int> MigrateQueries(IDatasource datasource, ISaveQueryStorageBackend sourceBackend, ISaveQueryStorageBackend destinationBackend)
         {
             int counter = 0;
-
+            
             await foreach (var sq in sourceBackend.GetSavedQueries())
             {
 
@@ -167,6 +181,7 @@ namespace sq_migrate
                 if (_failedQueries.Contains(sq.LoadedQueryName))
                 {
                     AnsiConsole.Markup($"{sq.LoadedQueryName} [yellow]Skiped failed in previouse run[/]\n");
+                    FileLogger.Info($"Skipped query that failed in previous run: {sq.LoadedQueryName}");
                     continue;
                 }
 
@@ -174,6 +189,7 @@ namespace sq_migrate
                 if (destinationBackend.AlreadyMigrated(sq.LoadedQueryName))
                 {
                     AnsiConsole.Markup($"{sq.LoadedQueryName} [blue]Already in destination[/]\n");
+                    FileLogger.Info($"Skipped already migrated query: {sq.LoadedQueryName}");
                     continue;
                 }
 
@@ -184,6 +200,7 @@ namespace sq_migrate
                 if (sqa is null)
                 {
                     AnsiConsole.Markup($"{sq.LoadedQueryName} [red]Failed to convert query[/]\n");
+                    FileLogger.Error($"Failed to convert query: {sq.LoadedQueryName}");
                     continue;
                 }
 
@@ -191,6 +208,7 @@ namespace sq_migrate
                 destinationBackend.StoreMigratedQuery(sqa, datasource);
 
                 AnsiConsole.Markup($"{sq.LoadedQueryName} [green]Converted[/]\n");
+                FileLogger.Info($"Converted query: {sq.LoadedQueryName}");
 
                 counter++;
             }

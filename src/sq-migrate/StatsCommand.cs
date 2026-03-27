@@ -41,6 +41,8 @@ namespace sq_migrate
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
         {
+            FileLogger.Info($"Stats command started. StorageType={settings.StorageType}, DatabaseType={settings.DatabaseType}, OutputFile={settings.FileOutput ?? "stats.csv"}");
+
             AnsiConsole.Write(
                 new FigletText("sq migrate")
                     .LeftJustified()
@@ -53,6 +55,7 @@ namespace sq_migrate
             if (statsBackend is null)
             {
                 AnsiConsole.Markup("[red]Failed to initialize the backend[/]");
+                FileLogger.Error("Stats command failed to initialize backend");
                 return 1;
             }
 
@@ -90,6 +93,8 @@ namespace sq_migrate
                 });
 
             writer.Close();
+
+            FileLogger.Info("Stats command completed successfully");
 
             return 0;
         }
