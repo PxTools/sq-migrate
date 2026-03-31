@@ -22,4 +22,10 @@
     <PackageReference Include="Spectre.Console.Cli" Version="0.50.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="SqlDb.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

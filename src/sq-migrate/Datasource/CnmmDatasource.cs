@@ -17,6 +17,11 @@ namespace sq_migrate.Datasource
 
         private void InitializeLookup()
         {
+            try
+            {
+                           
+
+
             string lang = PCAxis.Sql.DbConfig.SqlDbConfigsStatic.DataBases[_databaseId].MainLanguage.code;
             var values = PCAxis.Sql.ApiUtils.ApiUtilStatic.GetMenuLookupTables(lang);
             foreach (var value in values)
@@ -27,6 +32,12 @@ namespace sq_migrate.Datasource
                 {
                     _lookup.Add(maintable, tableId);
                 }
+            }
+
+            }
+            catch (Exception e)
+            {
+                throw e.InnerException;               
             }
         }
 
