@@ -16,9 +16,7 @@ namespace sq_migrate
         {
             FileLogger.Info($"Application starting. Args: {string.Join(' ', args)}");
 
-            
-
-
+            // For testing purposes, you can uncomment the following line to set the args directly in code.                        
             //args = new string[] {
             //    "migrate",
             //    "-t", "Database",
@@ -28,9 +26,6 @@ namespace sq_migrate
             //    "-v", "mssql",
             //    "-d", "Data Source=ssdyttre.test.sql;Initial Catalog=SDB_MetabasVy23;Integrated Security=True; enlist=false;"
             //};
-
-
-
 
             var app = new CommandApp();
             app.Configure(config =>
